@@ -10,6 +10,8 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.text.Font;
+import javafx.scene.text.Text;
 import javafx.scene.shape.Circle;
 import javafx.stage.Stage;
 import javafx.util.Duration;
@@ -19,18 +21,15 @@ import javafx.animation.PauseTransition;
 import javafx.animation.Timeline;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.Random;
 
-public class Level1 {
+public class Level2 {
     // Game configuration
     private static final int MAZE_SIZE = 20;
     private static final int CELL_SIZE = 30;
     private static final int PLAYER_SIZE = 20;
     private static final int GADGET_SIZE = 10;
     private static final int MONSTER_SIZE = 25;
-    private static final double DRAG_THRESHOLD = 15.0;  // Adjusts the dragging of brown cells
     private static final double COLLECTION_TIME = 0.2;
     private static final double PORTAL_ACTIVATION_TIME = 0.2;
 
@@ -41,12 +40,15 @@ public class Level1 {
     private Circle monster;
     private Circle portal;
     private ArrayList<Circle> gadgets = new ArrayList<>();
-    private ArrayList<Rectangle> brownC = new ArrayList<>();
     private Label feedback;
     private Timeline timeCollection;
     private Circle collectingGadget;
     private double collectionProgress;
     private Rectangle progressBar;
+    private Circle key = null;
+    private boolean keySpawned = false;
+    private Text keyLabel = null;
+    private boolean isKeyCollected = false;
     
     // Player and monster positions
     private int playerRow, playerCol;
@@ -69,18 +71,16 @@ public class Level1 {
             startGadgetCollection(event.getX(), event.getY());
             startPortalActivation(event.getX(), event.getY(), primaryStage);
         });
-        
         root.setOnMouseReleased(event -> {
             cancelGadgetCollection();
             cancelPortalActivation();
         });
         
-        // Progress bar for collection (hidden initially)
+        // Progress bar for collection
         progressBar = new Rectangle(0, 0, 0, 5);
         progressBar.setFill(Color.GREEN);
         progressBar.setVisible(false);
         root.getChildren().add(progressBar);
-        
         portalProgressBar = new Rectangle(0, 0, 0, 5);
         portalProgressBar.setFill(Color.PURPLE);
         portalProgressBar.setVisible(false);
@@ -111,8 +111,8 @@ public class Level1 {
         createPlayer();
         createMonster();
         createGadgets(3);
-        addbrownC(3);
         startProximityCheck();
+        createKey();
 
         VBox mainLayout = new VBox(8, topbarLayout, root);
         mainLayout.setPadding(new Insets(20, 20, 20, 20));
@@ -132,7 +132,6 @@ public class Level1 {
 
     // Generate the maze layout
     private void generateMaze() {
-        // Initialize maze with empty cells
         for (int row = 0; row < MAZE_SIZE; row++) {
             for (int col = 0; col < MAZE_SIZE; col++) {
                 maze[row][col] = new Rectangle(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
@@ -147,7 +146,7 @@ public class Level1 {
             for (int col = 0; col < MAZE_SIZE; col++) {
                 boolean canPlaceBlack = true;
 
-                if (random.nextDouble() < 0.25) {
+                if (random.nextDouble() < 0.3) {
                     if (row > 0 && col > 0 && maze[row - 1][col - 1].getFill() == Color.BLACK) {
                         canPlaceBlack = false;
                     }
@@ -171,7 +170,6 @@ public class Level1 {
         maze[0][0].setFill(Color.WHITE);
         maze[MAZE_SIZE - 1][MAZE_SIZE - 1].setFill(Color.WHITE);
         
-        ensureValidPath();
         ensureNoIsolatedCells();
     }
 
@@ -181,7 +179,7 @@ public class Level1 {
         while (gadgetsCreated < count) {
             int[] position = findValidWhiteCell(2, 2);
             if (position == null) break;
-
+            
             int row = position[0];
             int col = position[1];
 
@@ -194,7 +192,39 @@ public class Level1 {
         }
     }
 
-    // Checks if a specific cell is empty (not occupied by gadgets or brown cells).
+    // Handles the collection of gadgets and the key
+    private void collectGadget() {
+        if (collectingGadget != null) {
+            if (gadgets.contains(collectingGadget)) {
+                root.getChildren().remove(collectingGadget);
+                gadgets.remove(collectingGadget);
+                collectedGadgets++;
+
+                if (collectedGadgets == 3) {
+                    keySpawned = true;
+                    createKey();
+                    if (portal != null) {
+                        portal.setFill(Color.PURPLE);
+                    } else {
+                        createPortal();
+                    }
+                    updateFeedback("All gadgets collected! A key has appeared!", 3, "Find and collect the key!");
+                } else { 
+                    String gadgetMessage = "Gadget collected! Gadgets left: " + (3 - collectedGadgets);
+                    updateFeedback(gadgetMessage, 2, "Hold-click on gadgets to collect them!");
+                }
+            } else if (collectingGadget == key) {
+                root.getChildren().removeAll(key, keyLabel);
+                key = null;
+                keyLabel = null;
+                isKeyCollected = true;
+                updateFeedback("Key collected! Now you can use the portal!", 2, "Hold-click on the portal to activate it!");
+            }
+        }
+        cancelGadgetCollection();
+    }
+
+    // Checks if a specific cell is empty
     private boolean isCellEmpty(int row, int col) {
         for (Circle gadget : gadgets) {
             int gadgetRow = (int)(gadget.getCenterY() / CELL_SIZE);
@@ -204,24 +234,17 @@ public class Level1 {
             }
         }
 
-        for (Rectangle brownCell : brownC) {
-            int brownRow = (int)(brownCell.getY() / CELL_SIZE);
-            int brownCol = (int)(brownCell.getX() / CELL_SIZE);
-            if (row == brownRow && col == brownCol) {
-                return false;
-            }
-        }
-
-        return true; // Cell is empty
+        return true;
     }
 
-    // Starts the collection process for the nearest gadget to the player.
+    // Starts collecting a gadget or key if the player is close enough, and creates a portal if the key is collected.
     private void startGadgetCollection(double x, double y) {
         if (timeCollection != null) return;
 
-        Circle closestGadget = null;
+        Circle targetObject = null;
         double minDistance = Double.MAX_VALUE;
 
+        // Check gadgets
         for (Circle gadget : gadgets) {
             double distance = Math.sqrt(
                 Math.pow(x - gadget.getCenterX(), 2) + 
@@ -230,13 +253,27 @@ public class Level1 {
 
             if (distance < CELL_SIZE && distance < minDistance && 
                 isPlayerAdjacentTo(gadget.getCenterX(), gadget.getCenterY())) {
-                closestGadget = gadget;
+                targetObject = gadget;
                 minDistance = distance;
             }
         }
 
-        if (closestGadget != null) {
-            collectingGadget = closestGadget;
+        // Check key if it exists
+        if (key != null) {
+            double keyDistance = Math.sqrt(
+                Math.pow(x - key.getCenterX(), 2) + 
+                Math.pow(y - key.getCenterY(), 2)
+            );
+
+            if (keyDistance < CELL_SIZE && keyDistance < minDistance && 
+                isPlayerAdjacentTo(key.getCenterX(), key.getCenterY())) {
+                targetObject = key;
+                minDistance = keyDistance;
+            }
+        }
+
+        if (targetObject != null) {
+            collectingGadget = targetObject;
             collectionProgress = 0;
 
             progressBar.setX(collectingGadget.getCenterX() - GADGET_SIZE);
@@ -256,6 +293,9 @@ public class Level1 {
 
                     if (collectionProgress >= COLLECTION_TIME) {
                         collectGadget();
+                        if (collectingGadget == key) {
+                            createPortal();
+                        }
                     }
                 })
             );
@@ -263,7 +303,6 @@ public class Level1 {
             timeCollection.play();
         }
     }
-
     // Checks if the player is adjacent to a specific cell.
     private boolean isPlayerAdjacentTo(double x, double y) {
         int cellX = (int)(x / CELL_SIZE);
@@ -281,107 +320,34 @@ public class Level1 {
         collectingGadget = null;
         progressBar.setVisible(false);
     }
+    
+    // Creates a key at a valid white empty cell position
+    private void createKey() {
+        if (key != null || collectedGadgets < 3) return;
+        
+        int[] position = findValidWhiteCell(2, 2);
+        if (position == null) return;
 
-    // Collects the gadget and updates the game state accordingly.
-    private void collectGadget() {
-        if (collectingGadget != null && gadgets.contains(collectingGadget)) {
-            root.getChildren().remove(collectingGadget);
-            gadgets.remove(collectingGadget);
-            collectedGadgets++;
+        int row = position[0];
+        int col = position[1];
 
-            String gadgetMessage = "Gadget collected! Gadgets left: " + (3 - collectedGadgets);
-            updateFeedback(gadgetMessage, 2, "Hold-click on gadgets to collect them! Watch out for the monster!");
+        double centerX = (col + 0.5) * CELL_SIZE;
+        double centerY = (row + 0.5) * CELL_SIZE;
 
-            // Create portal if all gadgets are collected
-            if (collectedGadgets == 3 && !portalAdded) {
-                createPortal();
-                updateFeedback("All 3 gadgets collected!", 2, "Enter the portal to teleport to the next level!");
-            }
-        }
-        cancelGadgetCollection();
+        key = new Circle(centerX, centerY, GADGET_SIZE / 2);
+        key.setFill(Color.TRANSPARENT);
+
+        keyLabel = new Text("🗝️");
+        keyLabel.setFill(Color.BLACK);
+        keyLabel.setFont(Font.font(15));
+
+        keyLabel.setX(centerX - (keyLabel.getLayoutBounds().getWidth() / 2));
+        keyLabel.setY(centerY + (keyLabel.getLayoutBounds().getHeight() / 4));
+
+        root.getChildren().addAll(key, keyLabel);
     }
 
-    // Moves a brown cell to a new position if the move is valid.
-    private void moveBrownCell(Rectangle brownCell, int rowOffset, int colOffset) {
-        int row = (int)(brownCell.getY() / CELL_SIZE);
-        int col = (int)(brownCell.getX() / CELL_SIZE);
-
-        int newRow = row + rowOffset;
-        int newCol = col + colOffset;
-
-        if (isValidMove(newRow, newCol)) {
-            brownCell.setX(newCol * CELL_SIZE);
-            brownCell.setY(newRow * CELL_SIZE);
-        }
-    }
-
-    // Adds a specified number of brown cells to the game.
-    private void addbrownC(int count) {
-        int added = 0;
-        while (added < count) {
-            int row = random.nextInt(MAZE_SIZE);
-            int col = random.nextInt(MAZE_SIZE);
-
-            if (maze[row][col].getFill() == Color.WHITE && 
-                !(row == 0 && col == 0) && 
-                !(row == MAZE_SIZE - 1 && col == MAZE_SIZE - 1)) {
-
-                Rectangle brownCell = new Rectangle(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-                brownCell.setFill(Color.BROWN);
-                root.getChildren().add(brownCell);
-                brownC.add(brownCell);
-                added++;
-
-                addDragFunctionality(brownCell);
-            }
-        }
-    }
-
-    // Adds drag-and-drop functionality to a brown cell.
-    private void addDragFunctionality(Rectangle brownCell) {
-        brownCell.setOnMousePressed(event -> {
-            brownCell.setUserData(new double[]{
-                event.getSceneX(), 
-                event.getSceneY(),
-                brownCell.getX(),
-                brownCell.getY()
-            });
-        });
-
-        brownCell.setOnMouseDragged(event -> {
-            double[] initialData = (double[]) brownCell.getUserData();
-            double initialX = initialData[0];
-            double initialY = initialData[1];
-
-            double deltaX = event.getSceneX() - initialX;
-            double deltaY = event.getSceneY() - initialY;
-
-            if (Math.abs(deltaX) > DRAG_THRESHOLD || Math.abs(deltaY) > DRAG_THRESHOLD) {
-                if (Math.abs(deltaX) > Math.abs(deltaY)) {
-                    if (deltaX > 0) {
-                        moveBrownCell(brownCell, 0, 1);
-                    } else {
-                        moveBrownCell(brownCell, 0, -1);
-                    }
-                } else {
-                    if (deltaY > 0) {
-                        moveBrownCell(brownCell, 1, 0);
-                    } else {
-                        moveBrownCell(brownCell, -1, 0);
-                    }
-                }
-
-                brownCell.setUserData(new double[]{
-                    event.getSceneX(), 
-                    event.getSceneY(),
-                    brownCell.getX(),
-                    brownCell.getY()
-                });
-            }
-        });
-    }
-
-    // This method to check for brown cells
+    // Validates if the move to the specified cell is within bounds and is a white cell.
     private boolean isValidMove(int row, int col) {
         if (row < 0 || row >= MAZE_SIZE || col < 0 || col >= MAZE_SIZE) {
             return false;
@@ -391,43 +357,9 @@ public class Level1 {
             return false;
         }
         
-        for (Rectangle brownCell : brownC) {
-            if (brownCell.getX() / CELL_SIZE == col && brownCell.getY() / CELL_SIZE == row) {
-                return false;
-            }
-        }
-        
         return true;
     }
-
-
-    // Make sure the maze can be solved
-    private void ensureValidPath() {
-        boolean[][] visited = new boolean[MAZE_SIZE][MAZE_SIZE];
-        createPathDFS(0, 0, visited);
-    }
-
-    private boolean createPathDFS(int row, int col, boolean[][] visited) {
-        if (row == MAZE_SIZE-1 && col == MAZE_SIZE-1) return true;
-
-        visited[row][col] = true;
-        int[][] directions = {{-1,0}, {1,0}, {0,-1}, {0,1}};
-        Collections.shuffle(Arrays.asList(directions));
-
-        for (int[] dir : directions) {
-            int newRow = row + dir[0];
-            int newCol = col + dir[1];
-
-            if (isValidCell(newRow, newCol, visited)) {
-                maze[newRow][newCol].setFill(Color.WHITE);
-                if (createPathDFS(newRow, newCol, visited)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
+    
     // Gets rid of trapped spaces
     private void ensureNoIsolatedCells() {
         for (int row = 1; row < MAZE_SIZE-1; row++) {
@@ -451,14 +383,6 @@ public class Level1 {
                 }
             }
         }
-    }
-    
-    // Helper method to check if a cell is valid and unvisited
-    private boolean isValidCell(int row, int col, boolean[][] visited) {
-        return row >= 0 && row < MAZE_SIZE && 
-               col >= 0 && col < MAZE_SIZE &&
-               maze[row][col].getFill() == Color.WHITE &&
-               !visited[row][col];
     }
 
     // Check if a cell has white neighbors on all sides
@@ -504,14 +428,17 @@ public class Level1 {
         root.getChildren().add(monster);
     }
     
+    // Checks if a cell is white
     private boolean isWhiteCell(int row, int col) {
         return maze[row][col].getFill() == Color.WHITE;
     }
 
+    // Calculates the distance between two cells.
     private int getMazeDistance(int row1, int col1, int row2, int col2) {
         return Math.abs(row1 - row2) + Math.abs(col1 - col2);
     }
 
+    // Finds a random valid white cell in the maze that is a specified distance from both the player and the monster.
     private int[] findValidWhiteCell(int minDistanceFromPlayer, int minDistanceFromMonster) {
         ArrayList<int[]> validCells = new ArrayList<>();
         for (int row = 0; row < MAZE_SIZE; row++) {
@@ -527,8 +454,13 @@ public class Level1 {
         return validCells.get(random.nextInt(validCells.size()));
     }
 
-    // Create and place the portal (appears after collecting all gadgets)
+    // Creates a portal in the maze at a valid white cell
     private void createPortal() {
+        if (portal != null) {
+            portal.setFill(collectedGadgets >= 3 ? Color.PURPLE : Color.TRANSPARENT);
+            return;
+        }
+        
         int[] position = findValidWhiteCell(3, 3);
         if (position == null) {
             do {
@@ -540,10 +472,8 @@ public class Level1 {
         int col = position[1];
         
         portal = new Circle((col + 0.5) * CELL_SIZE, (row + 0.5) * CELL_SIZE, GADGET_SIZE / 2);
-        portal.setFill(Color.rgb(255, 0, 0, 0.6));
+        portal.setFill(collectedGadgets >= 3 ? Color.PURPLE : Color.TRANSPARENT);
         root.getChildren().add(portal);
-        
-        portalAdded = true;
     }
 
     // Move the player based on input
@@ -595,7 +525,7 @@ public class Level1 {
 
             @Override
             public void handle(long now) {
-                if (now - lastUpdate >= 500_000_000) {
+                if (now - lastUpdate >= 400_000_000) {
                     moveMonster();
                     if (checkGameOver(primaryStage)) {
                         this.stop();
@@ -607,9 +537,8 @@ public class Level1 {
         gameLoop.start();
     }
 
-    // Check if the game is over (player caught or reached portal)
+    // Check if the game is over (player caught)
     private boolean checkGameOver(Stage primaryStage) {
-        // Check if the player is caught by the monster
     	if (player.getBoundsInParent().intersects(monster.getBoundsInParent())) {
             updateFeedback("Game Over! The monster caught you!", 2, "");
             PauseTransition pause = new PauseTransition(Duration.seconds(2));
@@ -620,19 +549,21 @@ public class Level1 {
         return false;
     }
     
-    // Initiates portal activation when the player is close enough.
+    // Initiates portal activation once the player is close enough and the activation is completed.
     private void startPortalActivation(double x, double y, Stage primaryStage) {
-        if (portalTimeline != null || !portalAdded) return;
+        if (portalTimeline != null || 
+            portal == null || 
+            portal.getFill() == Color.TRANSPARENT || 
+            !isKeyCollected) { 
+            return;
+        }
 
         double distance = Math.sqrt(
             Math.pow(x - portal.getCenterX(), 2) + 
             Math.pow(y - portal.getCenterY(), 2)
         );
 
-        // Check if the player is close to the portal
         if (distance < CELL_SIZE && isPlayerAdjacentTo(portal.getCenterX(), portal.getCenterY())) {
-            isPortalActivated = true;
-            
             portalProgressBar.setX(portal.getCenterX() - GADGET_SIZE);
             portalProgressBar.setY(portal.getCenterY() - GADGET_SIZE * 2);
             portalProgressBar.setWidth(0);
@@ -659,8 +590,9 @@ public class Level1 {
         }
     }
 
-    // Highlights gadgets and the portal if the player is adjacent.
+    // Highlights nearby gadgets, the key, and the portal by changing their stroke when the player is adjacent (just to style things a bit)
     private void checkProximityHighlights() {
+        // Highlight gadgets
         for (Circle gadget : gadgets) {
             if (isPlayerAdjacentTo(gadget.getCenterX(), gadget.getCenterY())) {
                 gadget.setStroke(Color.WHITE);
@@ -670,7 +602,18 @@ public class Level1 {
             }
         }
 
-        if (portalAdded) {
+        // Highlight key if it exists
+        if (key != null) {
+            if (isPlayerAdjacentTo(key.getCenterX(), key.getCenterY())) {
+                key.setStroke(Color.WHITE);
+                key.setStrokeWidth(2);
+            } else {
+                key.setStroke(null);
+            }
+        }
+
+        // Only highlight the portal if it exists (after key collection)
+        if (portal != null) {
             if (isPlayerAdjacentTo(portal.getCenterX(), portal.getCenterY())) {
                 portal.setStroke(Color.WHITE);
                 portal.setStrokeWidth(2);
@@ -718,7 +661,6 @@ public class Level1 {
         }
     }
 
-
     // Return to main menu
     private void mainMenu(Stage mainStage) {
         mainStage.close();
@@ -729,14 +671,14 @@ public class Level1 {
     // Go to next level
     private void nextLevel(Stage mainStage) {
         mainStage.close();
-        Level2 next = new Level2();
+        Level3 next = new Level3();
         next.start(mainStage);
     }
 
     // Restart the game
     private void restart(Stage mainStage) {
         mainStage.close();
-        Level1 level = new Level1();
+        Level2 level = new Level2();
         level.start(mainStage);
     }
 }

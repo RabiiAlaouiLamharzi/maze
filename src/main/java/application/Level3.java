@@ -10,7 +10,10 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.text.Font;
+import javafx.scene.text.Text;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.Line;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import javafx.animation.AnimationTimer;
@@ -22,15 +25,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Random;
+import java.util.Iterator;
 
-public class Level1 {
+public class Level3 {
     // Game configuration
     private static final int MAZE_SIZE = 20;
     private static final int CELL_SIZE = 30;
     private static final int PLAYER_SIZE = 20;
     private static final int GADGET_SIZE = 10;
     private static final int MONSTER_SIZE = 25;
-    private static final double DRAG_THRESHOLD = 15.0;  // Adjusts the dragging of brown cells
     private static final double COLLECTION_TIME = 0.2;
     private static final double PORTAL_ACTIVATION_TIME = 0.2;
 
@@ -41,24 +44,33 @@ public class Level1 {
     private Circle monster;
     private Circle portal;
     private ArrayList<Circle> gadgets = new ArrayList<>();
-    private ArrayList<Rectangle> brownC = new ArrayList<>();
     private Label feedback;
     private Timeline timeCollection;
     private Circle collectingGadget;
     private double collectionProgress;
     private Rectangle progressBar;
+    private Circle gun = null;
+    private boolean gunSpawned = false;
+    private Text gunLabel = null;
+    private boolean isgunCollected = false;
+    
+    // Adding new variables for laser shooting
+    private ArrayList<Line> activeLasers = new ArrayList<>();
+    private String lastDirection = "RIGHT";
+    private static final double LASER_SPEED = 400;
+    private static final int LASER_LENGTH = 20;
+    private long lastShotTime = 0;
+    private static final long SHOT_COOLDOWN = 250_000_000;
+    private int monsterHitCount = 0;
+    private static final int MONSTER_DEATH_HITS = 5;
+    private boolean isMonsterAlive = true;
     
     // Player and monster positions
     private int playerRow, playerCol;
     private int monsterRow, monsterCol;
-    
-    private boolean isPortalActivated = false;
-    private Timeline portalTimeline;
-    private Rectangle portalProgressBar;
-    
+  
     private Random random = new Random();
     private int collectedGadgets = 0;
-    private boolean portalAdded = false;
 
     public void start(Stage primaryStage) {
         root = new Pane();
@@ -67,24 +79,17 @@ public class Level1 {
         // Set up mouse event handlers
         root.setOnMousePressed(event -> {
             startGadgetCollection(event.getX(), event.getY());
-            startPortalActivation(event.getX(), event.getY(), primaryStage);
         });
         
         root.setOnMouseReleased(event -> {
             cancelGadgetCollection();
-            cancelPortalActivation();
         });
         
-        // Progress bar for collection (hidden initially)
+        // Progress bar for collection
         progressBar = new Rectangle(0, 0, 0, 5);
         progressBar.setFill(Color.GREEN);
         progressBar.setVisible(false);
         root.getChildren().add(progressBar);
-        
-        portalProgressBar = new Rectangle(0, 0, 0, 5);
-        portalProgressBar.setFill(Color.PURPLE);
-        portalProgressBar.setVisible(false);
-        root.getChildren().add(portalProgressBar);
 
         // UI setup
         Button menu = new Button("☰");
@@ -111,8 +116,9 @@ public class Level1 {
         createPlayer();
         createMonster();
         createGadgets(3);
-        addbrownC(3);
         startProximityCheck();
+        creategun();
+        startLaserUpdateLoop(primaryStage);
 
         VBox mainLayout = new VBox(8, topbarLayout, root);
         mainLayout.setPadding(new Insets(20, 20, 20, 20));
@@ -121,6 +127,19 @@ public class Level1 {
         root.setFocusTraversable(true);
         scene.setOnMouseClicked(event -> root.requestFocus());
         scene.setOnKeyPressed(e -> movePlayer(e.getCode().toString()));
+        
+        scene.setOnKeyPressed(e -> {
+            String direction = e.getCode().toString();
+            if (direction.equals("UP") || direction.equals("DOWN") || 
+                direction.equals("LEFT") || direction.equals("RIGHT")) {
+                lastDirection = direction;
+            }
+            movePlayer(direction);
+            
+            if (direction.equals("SPACE") && isgunCollected) {
+                shootLaser();
+            }
+        });
 
         primaryStage.setTitle("Maze Runner");
         primaryStage.setScene(scene);
@@ -147,7 +166,7 @@ public class Level1 {
             for (int col = 0; col < MAZE_SIZE; col++) {
                 boolean canPlaceBlack = true;
 
-                if (random.nextDouble() < 0.25) {
+                if (random.nextDouble() < 0.3) {
                     if (row > 0 && col > 0 && maze[row - 1][col - 1].getFill() == Color.BLACK) {
                         canPlaceBlack = false;
                     }
@@ -171,7 +190,6 @@ public class Level1 {
         maze[0][0].setFill(Color.WHITE);
         maze[MAZE_SIZE - 1][MAZE_SIZE - 1].setFill(Color.WHITE);
         
-        ensureValidPath();
         ensureNoIsolatedCells();
     }
 
@@ -193,8 +211,35 @@ public class Level1 {
             }
         }
     }
+    
+    // Handles the collection of gadgets and the key
+    private void collectGadget() {
+        if (collectingGadget != null) {
+            if (gadgets.contains(collectingGadget)) {
+                root.getChildren().remove(collectingGadget);
+                gadgets.remove(collectingGadget);
+                collectedGadgets++;
 
-    // Checks if a specific cell is empty (not occupied by gadgets or brown cells).
+                if (collectedGadgets == 3) {
+                    gunSpawned = true;
+                    creategun();
+                    updateFeedback("All gadgets collected! Find and collect the gun!", 3, "Kill the monster with the gun to win!!!");
+                } else {
+                    String gadgetMessage = "Gadget collected! Gadgets left: " + (3 - collectedGadgets);
+                    updateFeedback(gadgetMessage, 2, "Hold-click on gadgets to collect them!");
+                }
+            } else if (collectingGadget == gun) {
+                root.getChildren().removeAll(gun, gunLabel);
+                gun = null;
+                gunLabel = null;
+                isgunCollected = true;
+                updateFeedback("Gun collected!", 3, "Press SPACE to shoot lasers! Kill the monster to win!!!");
+            }
+        }
+        cancelGadgetCollection();
+    }
+
+    // Checks if a specific cell is empty
     private boolean isCellEmpty(int row, int col) {
         for (Circle gadget : gadgets) {
             int gadgetRow = (int)(gadget.getCenterY() / CELL_SIZE);
@@ -204,22 +249,14 @@ public class Level1 {
             }
         }
 
-        for (Rectangle brownCell : brownC) {
-            int brownRow = (int)(brownCell.getY() / CELL_SIZE);
-            int brownCol = (int)(brownCell.getX() / CELL_SIZE);
-            if (row == brownRow && col == brownCol) {
-                return false;
-            }
-        }
-
-        return true; // Cell is empty
+        return true;
     }
-
-    // Starts the collection process for the nearest gadget to the player.
+    
+    // Starts collecting a gadget or key if the player is close enough, and creates a portal if the key is collected.
     private void startGadgetCollection(double x, double y) {
         if (timeCollection != null) return;
 
-        Circle closestGadget = null;
+        Circle targetObject = null;
         double minDistance = Double.MAX_VALUE;
 
         for (Circle gadget : gadgets) {
@@ -230,13 +267,26 @@ public class Level1 {
 
             if (distance < CELL_SIZE && distance < minDistance && 
                 isPlayerAdjacentTo(gadget.getCenterX(), gadget.getCenterY())) {
-                closestGadget = gadget;
+                targetObject = gadget;
                 minDistance = distance;
             }
         }
 
-        if (closestGadget != null) {
-            collectingGadget = closestGadget;
+        if (gun != null) {
+            double gunDistance = Math.sqrt(
+                Math.pow(x - gun.getCenterX(), 2) + 
+                Math.pow(y - gun.getCenterY(), 2)
+            );
+
+            if (gunDistance < CELL_SIZE && gunDistance < minDistance && 
+                isPlayerAdjacentTo(gun.getCenterX(), gun.getCenterY())) {
+                targetObject = gun;
+                minDistance = gunDistance;
+            }
+        }
+
+        if (targetObject != null) {
+            collectingGadget = targetObject;
             collectionProgress = 0;
 
             progressBar.setX(collectingGadget.getCenterX() - GADGET_SIZE);
@@ -263,7 +313,7 @@ public class Level1 {
             timeCollection.play();
         }
     }
-
+    
     // Checks if the player is adjacent to a specific cell.
     private boolean isPlayerAdjacentTo(double x, double y) {
         int cellX = (int)(x / CELL_SIZE);
@@ -281,107 +331,165 @@ public class Level1 {
         collectingGadget = null;
         progressBar.setVisible(false);
     }
+    
+    // Creates a gun at a valid white cell
+    private void creategun() {
+        if (gun != null || collectedGadgets < 3) return;
+        
+        int[] position = findValidWhiteCell(2, 2);
+        if (position == null) return;
 
-    // Collects the gadget and updates the game state accordingly.
-    private void collectGadget() {
-        if (collectingGadget != null && gadgets.contains(collectingGadget)) {
-            root.getChildren().remove(collectingGadget);
-            gadgets.remove(collectingGadget);
-            collectedGadgets++;
+        int row = position[0];
+        int col = position[1];
 
-            String gadgetMessage = "Gadget collected! Gadgets left: " + (3 - collectedGadgets);
-            updateFeedback(gadgetMessage, 2, "Hold-click on gadgets to collect them! Watch out for the monster!");
+        double centerX = (col + 0.5) * CELL_SIZE;
+        double centerY = (row + 0.5) * CELL_SIZE;
 
-            // Create portal if all gadgets are collected
-            if (collectedGadgets == 3 && !portalAdded) {
-                createPortal();
-                updateFeedback("All 3 gadgets collected!", 2, "Enter the portal to teleport to the next level!");
+        gun = new Circle(centerX, centerY, GADGET_SIZE / 2);
+        gun.setFill(Color.TRANSPARENT);
+
+        gunLabel = new Text("🔫️");
+        gunLabel.setFill(Color.BLACK);
+        gunLabel.setFont(Font.font(15));
+
+        gunLabel.setX(centerX - (gunLabel.getLayoutBounds().getWidth() / 2));
+        gunLabel.setY(centerY + (gunLabel.getLayoutBounds().getHeight() / 4));
+
+        root.getChildren().addAll(gun, gunLabel);
+    }
+    
+    // Starts the laser update loop using an AnimationTimer to continuously update lasers.
+    private void startLaserUpdateLoop(Stage primaryStage) {
+        AnimationTimer laserTimer = new AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                updateLasers(primaryStage);
+            }
+        };
+        laserTimer.start();
+    }
+
+    // Shoots a laser in the last direction the player moved
+    private void shootLaser() {
+        long currentTime = System.nanoTime();
+        if (currentTime - lastShotTime < SHOT_COOLDOWN) {
+            return;
+        }
+        lastShotTime = currentTime;
+        
+        double startX = player.getCenterX();
+        double startY = player.getCenterY();
+        
+        Line laser = new Line(startX, startY, startX, startY);
+        laser.setStroke(Color.GREEN);
+        laser.setStrokeWidth(2);
+        
+        double directionX = 0;
+        double directionY = 0;
+        
+        switch (lastDirection) {
+            case "UP":    directionY = -1; break;
+            case "DOWN":  directionY = 1; break;
+            case "LEFT":  directionX = -1; break;
+            case "RIGHT": directionX = 1; break;
+        }
+        
+        laser.setUserData(new double[]{directionX, directionY});
+        
+        laser.setEndX(startX + (directionX * LASER_LENGTH));
+        laser.setEndY(startY + (directionY * LASER_LENGTH));
+        
+        activeLasers.add(laser);
+        root.getChildren().add(laser);
+    }
+    
+    // Updates the position of active lasers and handles collisions with the monster.
+    private void updateLasers(Stage primaryStage) {
+        Iterator<Line> iterator = activeLasers.iterator();
+        while (iterator.hasNext()) {
+            Line laser = iterator.next();
+            double[] direction = (double[]) laser.getUserData();
+            
+            laser.setStartX(laser.getStartX() + direction[0] * 5);
+            laser.setStartY(laser.getStartY() + direction[1] * 5);
+            laser.setEndX(laser.getEndX() + direction[0] * 5);
+            laser.setEndY(laser.getEndY() + direction[1] * 5);
+            
+            // Check if laser is out of bounds
+            if (isLaserOutOfBounds(laser)) {
+                root.getChildren().remove(laser);
+                iterator.remove();
+                continue;
+            }
+            
+            if (isLaserHittingMonster(laser)) {
+                handleMonsterHit(primaryStage);
+                root.getChildren().remove(laser);
+                iterator.remove();
             }
         }
-        cancelGadgetCollection();
     }
-
-    // Moves a brown cell to a new position if the move is valid.
-    private void moveBrownCell(Rectangle brownCell, int rowOffset, int colOffset) {
-        int row = (int)(brownCell.getY() / CELL_SIZE);
-        int col = (int)(brownCell.getX() / CELL_SIZE);
-
-        int newRow = row + rowOffset;
-        int newCol = col + colOffset;
-
-        if (isValidMove(newRow, newCol)) {
-            brownCell.setX(newCol * CELL_SIZE);
-            brownCell.setY(newRow * CELL_SIZE);
+    
+    // Checks if the laser is out of bounds based on its starting coordinates.
+    private boolean isLaserOutOfBounds(Line laser) {
+        return laser.getStartX() < 0 || laser.getStartX() > MAZE_SIZE * CELL_SIZE ||
+               laser.getStartY() < 0 || laser.getStartY() > MAZE_SIZE * CELL_SIZE;
+    }
+    
+    // Determines if the laser intersects with the monster's bounds.
+    private boolean isLaserHittingMonster(Line laser) {
+        return monster.getBoundsInParent().intersects(laser.getBoundsInParent());
+    }
+    
+    // Handles the logic when the monster is hit
+    private void handleMonsterHit(Stage primaryStage) {
+        if (!isMonsterAlive) return;
+        
+        monsterHitCount++;
+        
+        if (monsterHitCount >= MONSTER_DEATH_HITS) {
+            // Monster dies
+            root.getChildren().remove(monster);
+            isMonsterAlive = false;
+            updateFeedback("You defeated the monster!", 1, "YOU WIN!!!");
+            PauseTransition pause = new PauseTransition(Duration.seconds(2));
+            pause.setOnFinished(e -> youWin(primaryStage));
+            pause.play();
+            return;
         }
-    }
 
-    // Adds a specified number of brown cells to the game.
-    private void addbrownC(int count) {
-        int added = 0;
-        while (added < count) {
-            int row = random.nextInt(MAZE_SIZE);
-            int col = random.nextInt(MAZE_SIZE);
-
-            if (maze[row][col].getFill() == Color.WHITE && 
-                !(row == 0 && col == 0) && 
-                !(row == MAZE_SIZE - 1 && col == MAZE_SIZE - 1)) {
-
-                Rectangle brownCell = new Rectangle(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-                brownCell.setFill(Color.BROWN);
-                root.getChildren().add(brownCell);
-                brownC.add(brownCell);
-                added++;
-
-                addDragFunctionality(brownCell);
+        monster.setFill(Color.ORANGE);
+        PauseTransition pause = new PauseTransition(Duration.seconds(0.5));
+        pause.setOnFinished(e -> {
+            if (isMonsterAlive) {
+                monster.setFill(Color.RED);
             }
-        }
-    }
-
-    // Adds drag-and-drop functionality to a brown cell.
-    private void addDragFunctionality(Rectangle brownCell) {
-        brownCell.setOnMousePressed(event -> {
-            brownCell.setUserData(new double[]{
-                event.getSceneX(), 
-                event.getSceneY(),
-                brownCell.getX(),
-                brownCell.getY()
-            });
         });
-
-        brownCell.setOnMouseDragged(event -> {
-            double[] initialData = (double[]) brownCell.getUserData();
-            double initialX = initialData[0];
-            double initialY = initialData[1];
-
-            double deltaX = event.getSceneX() - initialX;
-            double deltaY = event.getSceneY() - initialY;
-
-            if (Math.abs(deltaX) > DRAG_THRESHOLD || Math.abs(deltaY) > DRAG_THRESHOLD) {
-                if (Math.abs(deltaX) > Math.abs(deltaY)) {
-                    if (deltaX > 0) {
-                        moveBrownCell(brownCell, 0, 1);
-                    } else {
-                        moveBrownCell(brownCell, 0, -1);
-                    }
-                } else {
-                    if (deltaY > 0) {
-                        moveBrownCell(brownCell, 1, 0);
-                    } else {
-                        moveBrownCell(brownCell, -1, 0);
-                    }
-                }
-
-                brownCell.setUserData(new double[]{
-                    event.getSceneX(), 
-                    event.getSceneY(),
-                    brownCell.getX(),
-                    brownCell.getY()
-                });
+        pause.play();
+        
+        updateFeedback("Monster hit! " + (MONSTER_DEATH_HITS - monsterHitCount) + " hits remaining!", 1, "");
+        
+        double dx = monster.getCenterX() - player.getCenterX();
+        double dy = monster.getCenterY() - player.getCenterY();
+        double distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance > 0) {
+            double pushX = (dx / distance) * CELL_SIZE;
+            double pushY = (dy / distance) * CELL_SIZE;
+            
+            int newMonsterRow = monsterRow + (int) Math.round(pushY / CELL_SIZE);
+            int newMonsterCol = monsterCol + (int) Math.round(pushX / CELL_SIZE);
+            
+            if (isValidMove(newMonsterRow, newMonsterCol)) {
+                monsterRow = newMonsterRow;
+                monsterCol = newMonsterCol;
+                monster.setCenterX((monsterCol + 0.5) * CELL_SIZE);
+                monster.setCenterY((monsterRow + 0.5) * CELL_SIZE);
             }
-        });
+        }
     }
-
-    // This method to check for brown cells
+    
+    // Validates if the move to the specified cell is within bounds and is a white cell.
     private boolean isValidMove(int row, int col) {
         if (row < 0 || row >= MAZE_SIZE || col < 0 || col >= MAZE_SIZE) {
             return false;
@@ -391,41 +499,7 @@ public class Level1 {
             return false;
         }
         
-        for (Rectangle brownCell : brownC) {
-            if (brownCell.getX() / CELL_SIZE == col && brownCell.getY() / CELL_SIZE == row) {
-                return false;
-            }
-        }
-        
         return true;
-    }
-
-
-    // Make sure the maze can be solved
-    private void ensureValidPath() {
-        boolean[][] visited = new boolean[MAZE_SIZE][MAZE_SIZE];
-        createPathDFS(0, 0, visited);
-    }
-
-    private boolean createPathDFS(int row, int col, boolean[][] visited) {
-        if (row == MAZE_SIZE-1 && col == MAZE_SIZE-1) return true;
-
-        visited[row][col] = true;
-        int[][] directions = {{-1,0}, {1,0}, {0,-1}, {0,1}};
-        Collections.shuffle(Arrays.asList(directions));
-
-        for (int[] dir : directions) {
-            int newRow = row + dir[0];
-            int newCol = col + dir[1];
-
-            if (isValidCell(newRow, newCol, visited)) {
-                maze[newRow][newCol].setFill(Color.WHITE);
-                if (createPathDFS(newRow, newCol, visited)) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     // Gets rid of trapped spaces
@@ -451,14 +525,6 @@ public class Level1 {
                 }
             }
         }
-    }
-    
-    // Helper method to check if a cell is valid and unvisited
-    private boolean isValidCell(int row, int col, boolean[][] visited) {
-        return row >= 0 && row < MAZE_SIZE && 
-               col >= 0 && col < MAZE_SIZE &&
-               maze[row][col].getFill() == Color.WHITE &&
-               !visited[row][col];
     }
 
     // Check if a cell has white neighbors on all sides
@@ -504,14 +570,17 @@ public class Level1 {
         root.getChildren().add(monster);
     }
     
+    // Checks if a cell is white
     private boolean isWhiteCell(int row, int col) {
         return maze[row][col].getFill() == Color.WHITE;
     }
-
+    
+    // Calculates the distance between two cells.
     private int getMazeDistance(int row1, int col1, int row2, int col2) {
         return Math.abs(row1 - row2) + Math.abs(col1 - col2);
     }
-
+    
+    // Finds a random valid white cell in the maze that is a specified distance from both the player and the monster.
     private int[] findValidWhiteCell(int minDistanceFromPlayer, int minDistanceFromMonster) {
         ArrayList<int[]> validCells = new ArrayList<>();
         for (int row = 0; row < MAZE_SIZE; row++) {
@@ -527,36 +596,35 @@ public class Level1 {
         return validCells.get(random.nextInt(validCells.size()));
     }
 
-    // Create and place the portal (appears after collecting all gadgets)
-    private void createPortal() {
-        int[] position = findValidWhiteCell(3, 3);
-        if (position == null) {
-            do {
-                position = new int[]{random.nextInt(MAZE_SIZE), random.nextInt(MAZE_SIZE)};
-            } while (!isWhiteCell(position[0], position[1]));
-        }
-        
-        int row = position[0];
-        int col = position[1];
-        
-        portal = new Circle((col + 0.5) * CELL_SIZE, (row + 0.5) * CELL_SIZE, GADGET_SIZE / 2);
-        portal.setFill(Color.rgb(255, 0, 0, 0.6));
-        root.getChildren().add(portal);
-        
-        portalAdded = true;
-    }
-
     // Move the player based on input
     private void movePlayer(String direction) {
         int newRow = playerRow;
         int newCol = playerCol;
 
         switch (direction) {
-            case "UP":    newRow--; break;
-            case "DOWN":  newRow++; break;
-            case "LEFT":  newCol--; break;
-            case "RIGHT": newCol++; break;
-            default: return;
+            case "UP":    
+                newRow--; 
+                lastDirection = "UP";
+                break;
+            case "DOWN":  
+                newRow++; 
+                lastDirection = "DOWN";
+                break;
+            case "LEFT":  
+                newCol--; 
+                lastDirection = "LEFT";
+                break;
+            case "RIGHT": 
+                newCol++; 
+                lastDirection = "RIGHT";
+                break;
+            case "SPACE":
+                if (isgunCollected) {
+                    shootLaser();
+                }
+                return;
+            default: 
+                return;
         }
 
         if (isValidMove(newRow, newCol)) {
@@ -595,7 +663,7 @@ public class Level1 {
 
             @Override
             public void handle(long now) {
-                if (now - lastUpdate >= 500_000_000) {
+                if (now - lastUpdate >= 300_000_000) {
                     moveMonster();
                     if (checkGameOver(primaryStage)) {
                         this.stop();
@@ -607,10 +675,11 @@ public class Level1 {
         gameLoop.start();
     }
 
-    // Check if the game is over (player caught or reached portal)
+    // Update the checkGameOver method
     private boolean checkGameOver(Stage primaryStage) {
-        // Check if the player is caught by the monster
-    	if (player.getBoundsInParent().intersects(monster.getBoundsInParent())) {
+        if (!isMonsterAlive) return false;
+        
+        if (player.getBoundsInParent().intersects(monster.getBoundsInParent())) {
             updateFeedback("Game Over! The monster caught you!", 2, "");
             PauseTransition pause = new PauseTransition(Duration.seconds(2));
             pause.setOnFinished(e -> mainMenu(primaryStage));
@@ -619,48 +688,10 @@ public class Level1 {
         }
         return false;
     }
-    
-    // Initiates portal activation when the player is close enough.
-    private void startPortalActivation(double x, double y, Stage primaryStage) {
-        if (portalTimeline != null || !portalAdded) return;
 
-        double distance = Math.sqrt(
-            Math.pow(x - portal.getCenterX(), 2) + 
-            Math.pow(y - portal.getCenterY(), 2)
-        );
-
-        // Check if the player is close to the portal
-        if (distance < CELL_SIZE && isPlayerAdjacentTo(portal.getCenterX(), portal.getCenterY())) {
-            isPortalActivated = true;
-            
-            portalProgressBar.setX(portal.getCenterX() - GADGET_SIZE);
-            portalProgressBar.setY(portal.getCenterY() - GADGET_SIZE * 2);
-            portalProgressBar.setWidth(0);
-            portalProgressBar.setVisible(true);
-
-            portalTimeline = new Timeline(
-                new KeyFrame(Duration.seconds(0.05), e -> {
-                    double progress = portalProgressBar.getWidth() / (GADGET_SIZE * 2);
-                    progress += 0.05 / PORTAL_ACTIVATION_TIME;
-                    portalProgressBar.setWidth(progress * (GADGET_SIZE * 2));
-
-                    if (!isPlayerAdjacentTo(portal.getCenterX(), portal.getCenterY())) {
-                        cancelPortalActivation();
-                        return;
-                    }
-
-                    if (progress >= 1.0) {
-                        activatePortal(primaryStage);
-                    }
-                })
-            );
-            portalTimeline.setCycleCount(Timeline.INDEFINITE);
-            portalTimeline.play();
-        }
-    }
-
-    // Highlights gadgets and the portal if the player is adjacent.
+    // Highlights nearby gadgets, the key, and the portal by changing their stroke when the player is adjacent (just to style things a bit)
     private void checkProximityHighlights() {
+        // Highlight gadgets
         for (Circle gadget : gadgets) {
             if (isPlayerAdjacentTo(gadget.getCenterX(), gadget.getCenterY())) {
                 gadget.setStroke(Color.WHITE);
@@ -670,7 +701,18 @@ public class Level1 {
             }
         }
 
-        if (portalAdded) {
+        // Highlight gun if it exists
+        if (gun != null) {
+            if (isPlayerAdjacentTo(gun.getCenterX(), gun.getCenterY())) {
+                gun.setStroke(Color.WHITE);
+                gun.setStrokeWidth(2);
+            } else {
+                gun.setStroke(null);
+            }
+        }
+
+        // Only highlight the portal if it exists (after gun collection)
+        if (portal != null) {
             if (isPlayerAdjacentTo(portal.getCenterX(), portal.getCenterY())) {
                 portal.setStroke(Color.WHITE);
                 portal.setStrokeWidth(2);
@@ -689,25 +731,6 @@ public class Level1 {
         proximityTimeline.play();
     }
 
-    // Cancels portal activation and resets progress.
-    private void cancelPortalActivation() {
-        if (portalTimeline != null) {
-            portalTimeline.stop();
-            portalTimeline = null;
-        }
-        isPortalActivated = false;
-        portalProgressBar.setVisible(false);
-    }
-
-    // Activates the portal and transitions to the next level.
-    private void activatePortal(Stage primaryStage) {
-        cancelPortalActivation();
-        updateFeedback("Portal activated! Teleporting to next level...", 2, "");
-        PauseTransition pause = new PauseTransition(Duration.seconds(2));
-        pause.setOnFinished(e -> nextLevel(primaryStage));
-        pause.play();
-    }
-
     // Updates feedback messages for the player.
     private void updateFeedback(String message, double delay, String originalMessage) {
         feedback.setText(message);
@@ -718,7 +741,6 @@ public class Level1 {
         }
     }
 
-
     // Return to main menu
     private void mainMenu(Stage mainStage) {
         mainStage.close();
@@ -726,17 +748,17 @@ public class Level1 {
         menu.start(mainStage);
     }
     
-    // Go to next level
-    private void nextLevel(Stage mainStage) {
+    // Go to Win Screen
+    private void youWin(Stage mainStage) {
         mainStage.close();
-        Level2 next = new Level2();
-        next.start(mainStage);
+        YouWon win = new YouWon();
+        win.display(mainStage);
     }
 
     // Restart the game
     private void restart(Stage mainStage) {
         mainStage.close();
-        Level1 level = new Level1();
+        Level2 level = new Level2();
         level.start(mainStage);
     }
 }
