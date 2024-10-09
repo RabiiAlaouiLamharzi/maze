@@ -34,7 +34,7 @@ public class MainMenu extends Application {
     // Switches from the menu to Level1 (game window)
     private void startLevel(Stage mainStage) {
         mainStage.close();
-        Level3 newLevel = new Level3();
+        Level1 newLevel = new Level1();
         newLevel.start(mainStage);
     }
 
