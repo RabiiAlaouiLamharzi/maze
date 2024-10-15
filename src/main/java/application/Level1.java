@@ -95,18 +95,18 @@ public class Level1 {
         menu.setOnAction(event -> mainMenu(primaryStage));
         menu.setFocusTraversable(false);
         menu.setPadding(new Insets(15, 20, 15, 20));
-        menu.setStyle("-fx-border-color: BLACK; -fx-border-width: 3px;");
+        menu.setStyle("-fx-border-color: BLACK; -fx-background-color: WHITE; -fx-border-width: 3px;");
         
         Button reload = new Button("↻");
         reload.setOnAction(event -> restart(primaryStage));
         reload.setFocusTraversable(false);
         reload.setPadding(new Insets(15, 20, 15, 20));
-        reload.setStyle("-fx-border-color: BLACK; -fx-border-width: 3px;");
+        reload.setStyle("-fx-border-color: BLACK; -fx-background-color: WHITE; -fx-border-width: 3px;");
 
         feedback = new Label("Collect 3 coins to win! Watch out for the monster!");
         feedback.setMaxWidth(Double.MAX_VALUE);
         feedback.setPadding(new Insets(15, 25, 15, 25));
-        feedback.setStyle("-fx-background-color: LIGHTYELLOW; -fx-border-color: BLACK; -fx-border-width: 3px; -fx-font-size: 15px;");
+        feedback.setStyle("-fx-background-color: WHITE; -fx-border-color: BLACK; -fx-border-width: 3px; -fx-font-size: 15px;");
 
         HBox topbarLayout = new HBox(8);
         HBox.setHgrow(feedback, javafx.scene.layout.Priority.ALWAYS);
@@ -148,21 +148,20 @@ public class Level1 {
             for (int col = 0; col < MAZE_SIZE; col++) {
                 maze[row][col] = new Rectangle(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
                 maze[row][col].setFill(Color.GOLD);
-                maze[row][col].setStroke(Color.GOLD);
-                maze[row][col].setStrokeWidth(0);
+                maze[row][col].setStroke(Color.BROWN);
                 root.getChildren().add(maze[row][col]);
             }
         }
-
+        
         // Create a border for the entire maze
-        Rectangle mazeBorder = new Rectangle(-1, -1, (MAZE_SIZE * CELL_SIZE) + 2, (MAZE_SIZE * CELL_SIZE) + 4);
+        Rectangle mazeBorder = new Rectangle(-2, -1, (MAZE_SIZE * CELL_SIZE) + 4, (MAZE_SIZE * CELL_SIZE) + 4);
         mazeBorder.setFill(Color.TRANSPARENT);
-        mazeBorder.setStroke(Color.BLACK);
+        mazeBorder.setStroke(Color.web("#753A34"));
         mazeBorder.setStrokeWidth(3);
         root.getChildren().add(mazeBorder);
 
         Image blackCellImage = new Image(getClass().getResourceAsStream("/assets/walls1.png"));
-
+        
         // Randomly place black cells (represented by transparent cells with an image on top)
         for (int row = 0; row < MAZE_SIZE; row++) {
             for (int col = 0; col < MAZE_SIZE; col++) {
@@ -201,10 +200,9 @@ public class Level1 {
         maze[0][0].setFill(Color.GOLD);
         maze[MAZE_SIZE - 1][MAZE_SIZE - 1].setFill(Color.GOLD);
         
-        ensureValidPath();
         ensureNoIsolatedCells();
     }
-
+    
     // Load the image for the gadgets
     Image gadgetImage = new Image(getClass().getResourceAsStream("/assets/coins1.png"));
 
@@ -667,9 +665,8 @@ public class Level1 {
         gameLoop.start();
     }
 
- // Check if the game is over (player caught or reached portal)
+    // Check if the game is over (player caught or reached portal)
     private boolean checkGameOver(Stage primaryStage) {
-        // Check if the monster is in the same cell as the player
         if (playerRow == monsterRow && playerCol == monsterCol) {
             updateFeedback("Game Over! The monster caught you!", 2, "");
             PauseTransition pause = new PauseTransition(Duration.seconds(2));
