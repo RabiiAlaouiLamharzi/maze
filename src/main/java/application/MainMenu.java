@@ -12,7 +12,8 @@ public class MainMenu extends Application {
     public void start(Stage mainStage) {
         StackPane menuLayout = createMenuLayout(mainStage);
         mainStage.setTitle("MazeAdventure");
-        mainStage.setScene(new Scene(menuLayout, 20 * 32, 12 * 58));
+        mainStage.setScene(new Scene(menuLayout, 20 * 41, 12 * 70));
+        mainStage.setResizable(false);
         mainStage.show();
     }
 
@@ -34,8 +35,8 @@ public class MainMenu extends Application {
     // Switches from the menu to Level1 (game window)
     private void startLevel(Stage mainStage) {
         mainStage.close();
-        Level1 newLevel = new Level1();
-        newLevel.start(mainStage);
+        Level2 level1 = new Level2();
+        level1.start2(mainStage);
     }
 
     public static void main(String[] args) {

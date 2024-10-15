@@ -5,6 +5,8 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
@@ -29,11 +31,12 @@ import java.util.Iterator;
 
 public class Level3 {
     // Game configuration
-    private static final int MAZE_SIZE = 20;
-    private static final int CELL_SIZE = 30;
-    private static final int PLAYER_SIZE = 20;
-    private static final int GADGET_SIZE = 10;
-    private static final int MONSTER_SIZE = 25;
+    private static final int MAZE_SIZE = 18;
+    private static final int CELL_SIZE = 40;
+    private static final int PLAYER_SIZE = 40;
+    private static final int GADGET_SIZE = 25;
+    private static final int PORTAL_SIZE = 40;
+    private static final int MONSTER_SIZE = 40;
     private static final double COLLECTION_TIME = 0.2;
     private static final double PORTAL_ACTIVATION_TIME = 0.2;
 
@@ -72,7 +75,7 @@ public class Level3 {
     private Random random = new Random();
     private int collectedGadgets = 0;
 
-    public void start(Stage primaryStage) {
+    public void start3(Stage primaryStage) {
         root = new Pane();
         maze = new Rectangle[MAZE_SIZE][MAZE_SIZE];
         
@@ -96,16 +99,18 @@ public class Level3 {
         menu.setOnAction(event -> mainMenu(primaryStage));
         menu.setFocusTraversable(false);
         menu.setPadding(new Insets(15, 20, 15, 20));
+        menu.setStyle("-fx-border-color: BLACK; -fx-border-width: 3px;");
         
         Button reload = new Button("↻");
         reload.setOnAction(event -> restart(primaryStage));
         reload.setFocusTraversable(false);
         reload.setPadding(new Insets(15, 20, 15, 20));
+        reload.setStyle("-fx-border-color: BLACK; -fx-border-width: 3px;");
 
         feedback = new Label("Collect 3 coins to win! Watch out for the monster!");
         feedback.setMaxWidth(Double.MAX_VALUE);
         feedback.setPadding(new Insets(15, 25, 15, 25));
-        feedback.setStyle("-fx-background-color: white;");
+        feedback.setStyle("-fx-background-color: LIGHTBLUE; -fx-border-color: BLACK; -fx-border-width: 3px; -fx-font-size: 15px;");
 
         HBox topbarLayout = new HBox(8);
         HBox.setHgrow(feedback, javafx.scene.layout.Priority.ALWAYS);
@@ -121,9 +126,11 @@ public class Level3 {
         startLaserUpdateLoop(primaryStage);
 
         VBox mainLayout = new VBox(8, topbarLayout, root);
-        mainLayout.setPadding(new Insets(20, 20, 20, 20));
+        mainLayout.setPadding(new Insets(30, 50, 30, 50));
 
-        Scene scene = new Scene(mainLayout, 20 * 32, 12 * 58);
+        mainLayout.setStyle("-fx-background-color: LIGHTBLUE;");
+        
+        Scene scene = new Scene(mainLayout, 20 * 41, 12 * 70);
         root.setFocusTraversable(true);
         scene.setOnMouseClicked(event -> root.requestFocus());
         scene.setOnKeyPressed(e -> movePlayer(e.getCode().toString()));
@@ -155,8 +162,9 @@ public class Level3 {
         for (int row = 0; row < MAZE_SIZE; row++) {
             for (int col = 0; col < MAZE_SIZE; col++) {
                 maze[row][col] = new Rectangle(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-                maze[row][col].setFill(Color.WHITE);
-                maze[row][col].setStroke(Color.GRAY);
+                maze[row][col].setFill(Color.BLUE);
+                maze[row][col].setStroke(Color.BLUE);
+                maze[row][col].setStrokeWidth(0);
                 root.getChildren().add(maze[row][col]);
             }
         }
@@ -187,23 +195,23 @@ public class Level3 {
             }
         }
 
-        maze[0][0].setFill(Color.WHITE);
-        maze[MAZE_SIZE - 1][MAZE_SIZE - 1].setFill(Color.WHITE);
+        maze[0][0].setFill(Color.BLUE);
+        maze[MAZE_SIZE - 1][MAZE_SIZE - 1].setFill(Color.BLUE);
         
         ensureNoIsolatedCells();
     }
 
-    // Creates a specified number of gadgets in valid white cells.
+    // Creates a specified number of gadgets in valid BLUE cells.
     private void createGadgets(int count) {
         int gadgetsCreated = 0;
         while (gadgetsCreated < count) {
-            int[] position = findValidWhiteCell(2, 2);
+            int[] position = findValidBLUECell(2, 2);
             if (position == null) break;
 
             int row = position[0];
             int col = position[1];
 
-            if (isWhiteCell(row, col) && isCellEmpty(row, col)) {
+            if (isBLUECell(row, col) && isCellEmpty(row, col)) {
                 Circle gadget = new Circle((col + 0.5) * CELL_SIZE, (row + 0.5) * CELL_SIZE, GADGET_SIZE / 2, Color.GOLD);
                 gadgets.add(gadget);
                 root.getChildren().add(gadget);
@@ -332,11 +340,11 @@ public class Level3 {
         progressBar.setVisible(false);
     }
     
-    // Creates a gun at a valid white cell
+    // Creates a gun at a valid BLUE cell
     private void creategun() {
         if (gun != null || collectedGadgets < 3) return;
         
-        int[] position = findValidWhiteCell(2, 2);
+        int[] position = findValidBLUECell(2, 2);
         if (position == null) return;
 
         int row = position[0];
@@ -489,13 +497,13 @@ public class Level3 {
         }
     }
     
-    // Validates if the move to the specified cell is within bounds and is a white cell.
+    // Validates if the move to the specified cell is within bounds and is a BLUE cell.
     private boolean isValidMove(int row, int col) {
         if (row < 0 || row >= MAZE_SIZE || col < 0 || col >= MAZE_SIZE) {
             return false;
         }
         
-        if (maze[row][col].getFill() != Color.WHITE) {
+        if (maze[row][col].getFill() != Color.BLUE) {
             return false;
         }
         
@@ -506,7 +514,7 @@ public class Level3 {
     private void ensureNoIsolatedCells() {
         for (int row = 1; row < MAZE_SIZE-1; row++) {
             for (int col = 1; col < MAZE_SIZE-1; col++) {
-                if (maze[row][col].getFill() == Color.WHITE) {
+                if (maze[row][col].getFill() == Color.BLUE) {
                     boolean top = maze[row-1][col].getFill() == Color.BLACK;
                     boolean bottom = maze[row+1][col].getFill() == Color.BLACK;
                     boolean left = maze[row][col-1].getFill() == Color.BLACK;
@@ -516,10 +524,10 @@ public class Level3 {
                         // If trapped then remove a random wall
                         int wall = random.nextInt(4);
                         switch (wall) {
-                            case 0: maze[row-1][col].setFill(Color.WHITE); break;
-                            case 1: maze[row+1][col].setFill(Color.WHITE); break;
-                            case 2: maze[row][col-1].setFill(Color.WHITE); break;
-                            case 3: maze[row][col+1].setFill(Color.WHITE); break;
+                            case 0: maze[row-1][col].setFill(Color.BLUE); break;
+                            case 1: maze[row+1][col].setFill(Color.BLUE); break;
+                            case 2: maze[row][col-1].setFill(Color.BLUE); break;
+                            case 3: maze[row][col+1].setFill(Color.BLUE); break;
                         }
                     }
                 }
@@ -527,8 +535,8 @@ public class Level3 {
         }
     }
 
-    // Check if a cell has white neighbors on all sides
-    private boolean hasWhiteNeighbors(int row, int col) {
+    // Check if a cell has BLUE neighbors on all sides
+    private boolean hasBLUENeighbors(int row, int col) {
         for (int i = -1; i <= 1; i++) {
             for (int j = -1; j <= 1; j++) {
                 if (i == 0 && j == 0) continue;
@@ -537,7 +545,7 @@ public class Level3 {
                 
                 if (newRow >= 0 && newRow < MAZE_SIZE && 
                     newCol >= 0 && newCol < MAZE_SIZE && 
-                    !isWhiteCell(newRow, newCol)) {
+                    !isBLUECell(newRow, newCol)) {
                     return false;
                 }
             }
@@ -550,10 +558,22 @@ public class Level3 {
         do {
             playerRow = random.nextInt(MAZE_SIZE);
             playerCol = random.nextInt(MAZE_SIZE);
-        } while (!isWhiteCell(playerRow, playerCol) || !hasWhiteNeighbors(playerRow, playerCol) || !isCellEmpty(playerRow, playerCol));
-        
-        player = new Circle((playerCol + 0.5) * CELL_SIZE, (playerRow + 0.5) * CELL_SIZE, PLAYER_SIZE / 2, Color.BLUE);
-        root.getChildren().add(player);
+        } while (!isBLUECell(playerRow, playerCol) || 
+                 !hasBLUENeighbors(playerRow, playerCol) || 
+                 !isCellEmpty(playerRow, playerCol));
+
+        player = new Circle((playerCol + 0.5) * CELL_SIZE, (playerRow + 0.5) * CELL_SIZE, PLAYER_SIZE / 2);
+        player.setFill(Color.TRANSPARENT);
+
+        Image playerGif = new Image(getClass().getResourceAsStream("/assets/player.png"));
+        ImageView playerView = new ImageView(playerGif);
+        playerView.setFitWidth(PLAYER_SIZE);
+        playerView.setFitHeight(PLAYER_SIZE);
+
+        playerView.xProperty().bind(player.centerXProperty().subtract(PLAYER_SIZE / 2));
+        playerView.yProperty().bind(player.centerYProperty().subtract(PLAYER_SIZE / 2));
+
+        root.getChildren().addAll(player, playerView);
     }
 
     // Create and place the monster (similar to player creation)
@@ -561,18 +581,28 @@ public class Level3 {
         do {
             monsterRow = random.nextInt(MAZE_SIZE);
             monsterCol = random.nextInt(MAZE_SIZE);
-        } while (!isWhiteCell(monsterRow, monsterCol) || 
-                 !hasWhiteNeighbors(monsterRow, monsterCol) ||
+        } while (!isBLUECell(monsterRow, monsterCol) || 
+                 !hasBLUENeighbors(monsterRow, monsterCol) ||
                  getMazeDistance(monsterRow, monsterCol, playerRow, playerCol) < 4 ||
                  !isCellEmpty(monsterRow, monsterCol));
         
-        monster = new Circle((monsterCol + 0.5) * CELL_SIZE, (monsterRow + 0.5) * CELL_SIZE, MONSTER_SIZE / 2, Color.RED);
-        root.getChildren().add(monster);
+        monster = new Circle((monsterCol + 0.5) * CELL_SIZE, (monsterRow + 0.5) * CELL_SIZE, MONSTER_SIZE / 2);
+        monster.setFill(Color.TRANSPARENT);
+
+        Image monsterGif = new Image(getClass().getResourceAsStream("/assets/lvl3 - monstr.png"));
+        ImageView monsterView = new ImageView(monsterGif);
+        monsterView.setFitWidth(MONSTER_SIZE);
+        monsterView.setFitHeight(MONSTER_SIZE);
+
+        monsterView.xProperty().bind(monster.centerXProperty().subtract(MONSTER_SIZE / 2));
+        monsterView.yProperty().bind(monster.centerYProperty().subtract(MONSTER_SIZE / 2));
+
+        root.getChildren().addAll(monster, monsterView);
     }
     
-    // Checks if a cell is white
-    private boolean isWhiteCell(int row, int col) {
-        return maze[row][col].getFill() == Color.WHITE;
+    // Checks if a cell is BLUE
+    private boolean isBLUECell(int row, int col) {
+        return maze[row][col].getFill() == Color.BLUE;
     }
     
     // Calculates the distance between two cells.
@@ -580,12 +610,12 @@ public class Level3 {
         return Math.abs(row1 - row2) + Math.abs(col1 - col2);
     }
     
-    // Finds a random valid white cell in the maze that is a specified distance from both the player and the monster.
-    private int[] findValidWhiteCell(int minDistanceFromPlayer, int minDistanceFromMonster) {
+    // Finds a random valid BLUE cell in the maze that is a specified distance from both the player and the monster.
+    private int[] findValidBLUECell(int minDistanceFromPlayer, int minDistanceFromMonster) {
         ArrayList<int[]> validCells = new ArrayList<>();
         for (int row = 0; row < MAZE_SIZE; row++) {
             for (int col = 0; col < MAZE_SIZE; col++) {
-                if (isWhiteCell(row, col) &&
+                if (isBLUECell(row, col) &&
                     getMazeDistance(row, col, playerRow, playerCol) >= minDistanceFromPlayer &&
                     getMazeDistance(row, col, monsterRow, monsterCol) >= minDistanceFromMonster) {
                     validCells.add(new int[]{row, col});
@@ -636,26 +666,6 @@ public class Level3 {
         }
     }
 
-    // Move the monster
-    private void moveMonster() {
-        int dx = Integer.compare(playerCol, monsterCol);
-        int dy = Integer.compare(playerRow, monsterRow);
-
-        // 50% chance to move horizontally or vertically towards the player
-        if (random.nextBoolean()) {
-            if (isValidMove(monsterRow + dy, monsterCol)) {
-                monsterRow += dy;
-            }
-        } else {
-            if (isValidMove(monsterRow, monsterCol + dx)) {
-                monsterCol += dx;
-            }
-        }
-
-        monster.setCenterX((monsterCol + 0.5) * CELL_SIZE);
-        monster.setCenterY((monsterRow + 0.5) * CELL_SIZE);
-    }
-
     // Main game loop (Games are dynamic and need to constantly update)
     private void startGameLoop(Stage primaryStage) {
         AnimationTimer gameLoop = new AnimationTimer() {
@@ -675,11 +685,10 @@ public class Level3 {
         gameLoop.start();
     }
 
-    // Update the checkGameOver method
+ // Check if the game is over (player caught or reached portal)
     private boolean checkGameOver(Stage primaryStage) {
-        if (!isMonsterAlive) return false;
-        
-        if (player.getBoundsInParent().intersects(monster.getBoundsInParent())) {
+        // Check if the monster is in the same cell as the player
+        if (playerRow == monsterRow && playerCol == monsterCol) {
             updateFeedback("Game Over! The monster caught you!", 2, "");
             PauseTransition pause = new PauseTransition(Duration.seconds(2));
             pause.setOnFinished(e -> mainMenu(primaryStage));
@@ -689,12 +698,46 @@ public class Level3 {
         return false;
     }
 
+    // Update the moveMonster method to allow the monster to occupy the same cell as the player
+    private void moveMonster() {
+        int dx = Integer.compare(playerCol, monsterCol);
+        int dy = Integer.compare(playerRow, monsterRow);
+
+        // 50% chance to move horizontally or vertically towards the player
+        if (random.nextBoolean()) {
+            if (isValidMoveForMonster(monsterRow + dy, monsterCol)) {
+                monsterRow += dy;
+            }
+        } else {
+            if (isValidMoveForMonster(monsterRow, monsterCol + dx)) {
+                monsterCol += dx;
+            }
+        }
+
+        monster.setCenterX((monsterCol + 0.5) * CELL_SIZE);
+        monster.setCenterY((monsterRow + 0.5) * CELL_SIZE);
+    }
+
+    // New method to check if a move is valid for the monster
+    private boolean isValidMoveForMonster(int row, int col) {
+        if (row < 0 || row >= MAZE_SIZE || col < 0 || col >= MAZE_SIZE) {
+            return false;
+        }
+        
+        if (maze[row][col].getFill() != Color.LIGHTYELLOW) {
+            return false;
+        }
+
+        return true;
+    }
+
+
     // Highlights nearby gadgets, the key, and the portal by changing their stroke when the player is adjacent (just to style things a bit)
     private void checkProximityHighlights() {
         // Highlight gadgets
         for (Circle gadget : gadgets) {
             if (isPlayerAdjacentTo(gadget.getCenterX(), gadget.getCenterY())) {
-                gadget.setStroke(Color.WHITE);
+                gadget.setStroke(Color.BLUE);
                 gadget.setStrokeWidth(2);
             } else {
                 gadget.setStroke(null);
@@ -704,7 +747,7 @@ public class Level3 {
         // Highlight gun if it exists
         if (gun != null) {
             if (isPlayerAdjacentTo(gun.getCenterX(), gun.getCenterY())) {
-                gun.setStroke(Color.WHITE);
+                gun.setStroke(Color.BLUE);
                 gun.setStrokeWidth(2);
             } else {
                 gun.setStroke(null);
@@ -714,7 +757,7 @@ public class Level3 {
         // Only highlight the portal if it exists (after gun collection)
         if (portal != null) {
             if (isPlayerAdjacentTo(portal.getCenterX(), portal.getCenterY())) {
-                portal.setStroke(Color.WHITE);
+                portal.setStroke(Color.BLUE);
                 portal.setStrokeWidth(2);
             } else {
                 portal.setStroke(null);
@@ -758,7 +801,7 @@ public class Level3 {
     // Restart the game
     private void restart(Stage mainStage) {
         mainStage.close();
-        Level2 level = new Level2();
-        level.start(mainStage);
+        Level3 level3 = new Level3();
+        level3.start3(mainStage);
     }
 }
